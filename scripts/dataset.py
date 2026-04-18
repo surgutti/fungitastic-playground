@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import ast
 
 class SegmetationDataset(Dataset):
   def __init__(self, root, split="train", size="300", transforms=None):
@@ -33,7 +34,10 @@ class SegmetationDataset(Dataset):
       lambda x: str(self.root / "FungiTastic-Mini" / split / f"{size}p" / x)
     )
 
-    gt_masks = pd.read_parquet(mask_path).rename(columns={"file_name": "filename"})
+    gt_masks = pd.read_parquet(mask_path).rename(columns={"file_name": "filename"}, inplace=True)
+
+    if 'rle' in gt_masks.columns and isinstance(gt_masks['rle'].iloc[0], str):
+      gt_masks['rle]'] = gt_masks['rle'].apply(ast.literal_eval)
 
     self.df = df.merge(gt_masks, on="filename", how="inner").reset_index(drop=True)
   

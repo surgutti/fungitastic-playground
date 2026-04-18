@@ -3,6 +3,7 @@
 This is a project for `Neural Network - Theory and Practice` course at the University of Wroclaw.
 
 Dataset: https://bohemianvra.github.io/FungiTastic/
+
 Goal: Fungi Segmentation
 
 ### Instalation
