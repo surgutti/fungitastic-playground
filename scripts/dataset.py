@@ -26,7 +26,7 @@ class SegmetationDataset(Dataset):
       "test": "FungiTastic-Mini-TestMasks.parquet"
     }
 
-    csv_path = self.root / "metadata" / "FungiTastic-Mini" / split_to_csv[split]
+    csv_path = self.root / "FungiTastic-Mini" / split_to_csv[split]
     mask_path = self.root / "masks" / split_to_masks[split]
 
     df = pd.read_csv(csv_path)
@@ -38,6 +38,16 @@ class SegmetationDataset(Dataset):
 
     if 'rle' in gt_masks.columns and isinstance(gt_masks['rle'].iloc[0], str):
       gt_masks['rle]'] = gt_masks['rle'].apply(ast.literal_eval)
+    
+    gt_masks = (
+      gt_masks.groupby("filename")
+      .agg({
+        "rle": list,
+        "height": "first",
+        "width": "first"
+      })
+      .reset_index()
+    )
 
     self.df = df.merge(gt_masks, on="filename", how="inner").reset_index(drop=True)
   
