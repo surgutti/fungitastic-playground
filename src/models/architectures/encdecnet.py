@@ -1,7 +1,8 @@
-import torch as T
 import torch.nn as nn
 
-class SmallSegNet(nn.Module):
+class EncDecNetBackbone(nn.Module):
+  def __init__(self,
+    )
   def __init__(self, in_channels=3, num_classes=2):
     super().__init__()
 
@@ -45,8 +46,6 @@ class SmallSegNet(nn.Module):
       nn.ReLU(inplace=True)
     )
     # (B, 32, 300, 300)
-    self.head = nn.Conv2d(32, num_classes, kernel_size=1)
-    # (B, C, 300, 300)
 
   def forward(self, x):
     x = self.enc1(x)
