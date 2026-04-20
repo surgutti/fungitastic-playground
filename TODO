@@ -1,0 +1,10 @@
+
+
+Things TODO for working pipeline:
+
+- Create a dataset loader (src/datasets/fungitastic.py)
+- Create architecture
+- Create model
+- Create training config
+- Create training script
+- Look up the "Weights and Biases" logging script and apply

@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Callable
 
 import lightning as L
 import torch
+from torchvision.transforms import Transform
 
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -9,14 +11,11 @@ class FungiTasticDataset(Dataset):
   def __init__(
       self,
       image_dir: Path,
-      masks_file: Path
+      masks_file: Path,
+      transform: Callable [[torch.Tensor], torch.Tensor] | None = None,
+      image_transform: Callable [[torch.Tensor], torch.Tensor] | None = None
   ):
     super().__init__()
-    # TODO
-    pass
-
-  @staticmethod
-  def _normalize(img: torch.Tensor) -> torch.Tensor:
     # TODO
     pass
 
@@ -25,10 +24,21 @@ class FungiTasticDataset(Dataset):
     pass
 
 class FungiTasticDataModule(L.LightningDataModule):
+
+  """
+  Args:
+    data_dir:         Place where the download.py script put data
+    batch_size:       Size of a batch
+    transform:        Transforms applied to both images and masks (resizing, crop, ...)
+    image_transforms: Transforms applied only to images (distortion, normalization)
+  """
+
   def __init__(
       self,
       data_dir: str | Path,
       batch_size: int = 32,
+      transform: Callable [[torch.Tensor], torch.Tensor] | None = None,
+      image_transform: Callable [[torch.Tensor], torch.Tensor] | None = None
   ):
     super().__init__()
 
@@ -40,17 +50,23 @@ class FungiTasticDataModule(L.LightningDataModule):
     
     self.train_dataset = FungiTasticDataset(
       image_dir / "train" / "300p", 
-      masks_dir / "FungiTastic-Mini-TrainMasks.parquet"
+      masks_dir / "FungiTastic-Mini-TrainMasks.parquet",
+      transform=transform,
+      image_transform=image_transform
     )
     
     self.val_dataset = FungiTasticDataset(
       image_dir / "val" / "300p", 
-      masks_dir / "FungiTastic-Mini-ValidationMasks.parquet"
+      masks_dir / "FungiTastic-Mini-ValidationMasks.parquet",
+      transform=transform,
+      image_transform=image_transform
     )
     
     self.test_dataset = FungiTasticDataset(
       image_dir / "test" / "300p", 
-      masks_dir / "FungiTastic-Mini-TestMasks.parquet"
+      masks_dir / "FungiTastic-Mini-TestMasks.parquet",
+      transform=transform,
+      image_transform=image_transform
     )
     
   def train_dataloader(self):
