@@ -7,6 +7,10 @@ from src.models.architectures.encdecnet import EncDecNetBackbone
 from src.models.segmentation_model import SegmentationModel
 from src.datasets.fungitastic import FungiTasticDataModule
 
+from src.config.constants import WANDB_ENTITY, WANDB_PROJECT
+
+from lightning.pytorch.loggers import WandbLogger
+
 def build_config() -> fdl.Config[ExperimentConfig]:
   max_epochs = 100
   embed_ch_dim = 32
@@ -21,8 +25,14 @@ def build_config() -> fdl.Config[ExperimentConfig]:
 
   data_module = fdl.Config(
     FungiTasticDataModule,
-    "data",
+    "data/FungiTastic",
     batch_size=32
+  )
+
+  wandb_logger = fdl.Partial(
+      WandbLogger,
+      entity=WANDB_ENTITY,
+      project=WANDB_PROJECT,
   )
 
   checkpoints_callback = fdl.Partial(
@@ -44,7 +54,7 @@ def build_config() -> fdl.Config[ExperimentConfig]:
 
   training_cfg = fdl.Config(
     TrainingConfig,
-    wandb_logger=None,
+    wandb_logger=wandb_logger,
     checkpoint_callback=checkpoints_callback,
     max_epochs=max_epochs,
     callbacks=[]

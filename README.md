@@ -17,5 +17,11 @@ uv sync
 ### Dataset download
 
 ```bash
-uv run scripts/download.py --metadata --masks --images --size 300 --save_path ./data
+uv run scripts/download.py --subset m --metadata --masks --images --size 300 --save_path ./data
+```
+
+### Running
+
+```bash
+uv run python -m scripts.train_model src/config/encdecnet_segmenter.py --seed 42
 ```

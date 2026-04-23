@@ -2,3 +2,4 @@ data/
 models/checkpoints/
 .venv
 uv.lock
+logs/

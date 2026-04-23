@@ -29,12 +29,12 @@ class FungiTasticDataset(Dataset):
     "microscopic"
   }
 
-  def __init__(self, data_root: Path, split: str, transforms=None):
+  def __init__(self, data_root: Path, split: str, transform=None):
     self.data_root = Path(data_root)
     self.split = split
-    self.transform = transforms
+    self.transform = transform
 
-    image_root = self.data_root / "FungiTastic" / split / "300p"
+    image_root = self.data_root / "FungiTastic-Mini" / split / "300p"
 
     mask_name = {
       "train": "Train",
@@ -219,13 +219,13 @@ class FungiTasticDataModule(L.LightningDataModule):
     self.val_dataset = FungiTasticDataset(
       data_root,
       "val",
-      transforms=transform
+      transform=transform
     )
     
     self.test_dataset = FungiTasticDataset(
       data_root,
       "test",
-      transforms=transform
+      transform=transform
     )
     
   def train_dataloader(self):
