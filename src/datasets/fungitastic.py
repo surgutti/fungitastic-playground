@@ -3,149 +3,229 @@ from typing import Callable
 
 import lightning as L
 import torch
-from torchvision.transforms import Transform
 
 from torch.utils.data import DataLoader, Dataset, random_split
 
+import cv2
 import numpy as np
 import pandas as pd
-from PIL import Image
-import cv2
+from torchvision.io import read_image, ImageReadMode
 
 class FungiTasticDataset(Dataset):
 
-  def __init__(
-      self,
-      data_root: Path,
-      split: str,
-      transform: Callable [[torch.Tensor], torch.Tensor] | None = None,
-      image_transform: Callable [[torch.Tensor], torch.Tensor] | None = None
-  ):
-    super().__init__()
-    
-    self.data_root = data_root
+  LABEL_TO_ID = {
+    "cap": 1,
+    "stem": 2,
+    "gills": 3,
+    "pores": 4,
+    "ring": 5,
+    "ridges": 6,
+    "teeth": 7,
+    "unknown underside": 8
+  }
+
+  IGNORE_LABELS = {
+    "fruiting_body",
+    "microscopic"
+  }
+
+  def __init__(self, data_root: Path, split: str, transforms=None):
+    self.data_root = Path(data_root)
     self.split = split
-    self.transform = transform
-    self.image_transform = image_transform
+    self.transform = transforms
 
-    mask_naming = {
-      'train': 'Train',
-      'val': 'Validation',
-      'test': 'Test'
-    }
+    image_root = self.data_root / "FungiTastic" / split / "300p"
 
-    meta_naming = {
-      'train': 'Train',
-      'val': 'Val',
-      'test': 'Test'
-    }
+    mask_name = {
+      "train": "Train",
+      "val" : "Validation",
+      "test": "Test"
+    }[split]
 
-    mask_path = \
-      data_root /\
-        f'FungiTastic-Mini-{mask_naming[split]}Masks.parquet'
-    
-    meta_path = \
-      data_root /\
-        'metadata' /\
-          'FungiTastic-Mini' /\
-              f'FungiTastic-Mini-{meta_naming[split]}.csv'
-    
-    self.df = pd.read_csv(meta_path)
-    self.df["image_path"] = self.df.filename.apply(
-      lambda x: str((data_root / 'FungiTastic' / split / '300p' / x).resolve())
+    meta_name = {
+      "train": "Train",
+      "val": "Val",
+      "test": "Test"
+    }[split]
+
+    meta_path = (
+      self.data_root
+      / "metadata"
+      / "FungiTastic-Mini"
+      / f"FungiTastic-Mini-{meta_name}.csv"
     )
 
-    self.gt_masks = pd.read_parquet(mask_path)
-    self.gt_masks.rename(columns={'file_name': 'filename'}, inplace=True)
+    mask_path = self.data_root / f"FungiTastic-Mini-{mask_name}Masks.parquet"
 
-    self.df = self.df.merge(self.gt_masks, on='filename', how='inner')
-    self.uniq_df = self.df['filename'].unique()
+    meta = pd.read_csv(meta_path, usecols=["filename"])
+    masks = pd.read_parquet(
+      mask_path,
+      columns=["file_name", "label", "width", "height", "rle"]
+    ).rename(columns={"file_name": "filename"})
 
-    self.df = self.df.label.apply(lambda x:
-      if x == 'gills':
-        return 1
-      elif 
+    valid_filenames = set(meta["filename"])
+    masks = masks[masks["filename"].isin(valid_filenames)].copy()
+    
+    masks = masks[~masks["label"].isin(self.IGNORE_LABELS)].copy()
+    masks["label_id"] = masks["label"].map(self.LABEL_TO_ID)
+
+    unknown_labels = masks.loc[masks["label_id"].isna(), "label"].unique()
+    # print(f'{unknown_labels=}')
+    assert len(unknown_labels) == 0
+
+    masks["label_id"] = masks["label_id"].astype(np.uint8)
+
+    masks = masks.sort_values("filename", kind="stable").reset_index(drop=True)
+
+    filenames = masks["filename"].to_numpy()
+
+    starts = np.flatnonzero(
+      np.r_[True, filenames[1:] != filenames[:-1]]
     )
+
+    self.part_offsets = np.r_[starts, len(masks)].astype(np.int64)
+
+    self.filenames = filenames[starts].tolist()
+    self.image_paths = [
+      str(image_root / filename)
+      for filename in self.filenames
+    ]
+
+    self.part_rles = masks["rle"].to_numpy(dtype=object)
+    self.part_label_ids = masks["label_id"].to_numpy(np.uint8)
+    self.part_widths = masks["width"].to_numpy(np.int32)
+    self.part_heights = masks["height"].to_numpy(np.int32)
+
+    del meta
+    del masks
 
   def __len__(self) -> int:
-    return 
-
-  @staticmethod
-  def _rle_to_mask(rle_points, height, width):
-    mask = np.zeros(height * width, dtype=np.uint8)
-    rle_counts = rle_points[:-4]
-    current_position = 0
-    current_value = 0
-    for rle_count in rle_counts:
-      mask[current_position:current_position + rle_count] = current_value
-      current_value ^= 1
-      current_position += rle_count
-    mask = mask.reshape((height, width))
-    return mask
+    return len(self.filenames)
 
   def __getitem__(self, idx: int):
-    filename = self.uniq_df.iloc[idx]
+    image = read_image(self.image_paths[idx], mode=ImageReadMode.RGB)
 
-    rows = self.df.loc[self.df['filename'] == filename]
-    image_path = rows['image_path'].iloc[0]
+    start = self.part_offsets[idx]
+    end = self.part_offsets[idx + 1]
 
-    image = Image.open(image_path)
-    width, height = image.size
+    mask = self._build_semantic_mask(start, end)
 
-    mask = torch.zeros((height, width, 3), dtype=torch.uint8)
-    for row in rows[['rle', 'label', 'width', 'height']].itertuples():
-      if row.label == 'fruiting_body':
-        continue
+    image_h, image_w = image.shape[-2:]
+    mask = cv2.resize(
+      mask,
+      (image_w, image_h),
+      interpolation=cv2.INTER_NEAREST
+    )
+
+    mask = torch.from_numpy(mask).long()
+
+    image, mask = self._pad_crop_300(image, mask)
+
+    image = image.float() / 255.0
+
+    if self.transform is not None:
+      image, mask = self.transform(image, mask)
+    
+    return image, mask
+
+  def _build_semantic_mask(self, start: int, end: int) -> np.ndarray:
+    height = int(self.part_heights[start])
+    width = int(self.part_widths[start])
+
+    semantic = np.zeros((height, width), dtype=np.uint8)
+
+    for part_idx in range(start, end):
+      part_mask = self._rle_to_mask(
+        self.part_rles[part_idx],
+        int(self.part_heights[part_idx]),
+        int(self.part_widths[part_idx])
+      )
+
+      label_id = self.part_label_ids[part_idx]
+      semantic[part_mask.astype(bool)] = label_id
+    
+    return semantic
+
+  @staticmethod
+  def _rle_to_mask(rle_points, height: int, width: int) -> np.ndarray:
+    mask = np.zeros(height * width, dtype=np.uint8)
+
+    position = 0
+    value = 0
+    for count in rle_points[:-4]:
+      if value == 1:
+        mask[position:position + count] = 1
       
-      mask = self._rle_to_mask(row.rle, row.height, row.width)
-      mask = cv2.resize(mask.astype(np.uint8), image.size, interpolation=cv2.INTER_NEAREST).astype(bool)
+      position += count
+      value ^= 1
+    
+    return mask.reshape(height, width)
+  
+  @staticmethod
+  def _pad_crop_300(image: torch.Tensor, mask: torch.Tensor):
+    target = 300
+    _, h, w = image.shape
 
+    pad_h = max(0, target - h)
+    pad_w = max(0, target - w)
+
+    top = pad_h // 2
+    bottom = pad_h - top
+    left = pad_w // 2
+    right = pad_w - left
+
+    image = torch.nn.functional.pad(
+      image,
+      (left, right, top, bottom),
+      value=0
+    )
+
+    mask = torch.nn.functional.pad(
+      mask,
+      (left, right, top, bottom),
+      value=0
+    )
+
+    _, h, w = image.shape
+
+    top = max(0, (h - target) // 2)
+    left = max(0, (w - target) // 2)
+
+    image = image[:, top:top + target, left:left + target]
+    mask = mask[top:top + target, left:left + target]
+
+    return image, mask
 
 
 class FungiTasticDataModule(L.LightningDataModule):
 
-  """
-  Args:
-    data_dir:         Place where the download.py script put data
-    batch_size:       Size of a batch
-    transform:        Transforms applied to both images and masks (resizing, crop, ...)
-    image_transforms: Transforms applied only to images (distortion, normalization)
-  """
-
   def __init__(
       self,
-      data_dir: str | Path,
+      data_root: str | Path,
       batch_size: int = 32,
-      transform: Callable [[torch.Tensor], torch.Tensor] | None = None,
-      image_transform: Callable [[torch.Tensor], torch.Tensor] | None = None
+      transform: Callable [[torch.Tensor], torch.Tensor] | None = None
   ):
     super().__init__()
 
-    self.data_dir = Path(data_dir)
+    self.data_root = Path(data_root)
     self.batch_size = batch_size
 
-    image_dir = self.data_dir / "FungiTastic" / "FungiTastic"
-    masks_dir = self.data_dir / "FungiTastic"
-    
     self.train_dataset = FungiTasticDataset(
-      image_dir / "train" / "300p", 
-      masks_dir / "FungiTastic-Mini-TrainMasks.parquet",
+      data_root,
+      "train",
       transform=transform,
-      image_transform=image_transform
     )
     
     self.val_dataset = FungiTasticDataset(
-      image_dir / "val" / "300p", 
-      masks_dir / "FungiTastic-Mini-ValidationMasks.parquet",
-      transform=transform,
-      image_transform=image_transform
+      data_root,
+      "val",
+      transforms=transform
     )
     
     self.test_dataset = FungiTasticDataset(
-      image_dir / "test" / "300p", 
-      masks_dir / "FungiTastic-Mini-TestMasks.parquet",
-      transform=transform,
-      image_transform=image_transform
+      data_root,
+      "test",
+      transforms=transform
     )
     
   def train_dataloader(self):
