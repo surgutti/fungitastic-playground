@@ -17,5 +17,5 @@ uv sync
 ### Dataset download
 
 ```bash
-uv run scripts/download.py --masks --images --size 300 --save_path ./data
+uv run scripts/download.py --metadata --masks --images --size 300 --save_path ./data
 ```
