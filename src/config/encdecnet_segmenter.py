@@ -12,7 +12,7 @@ from src.config.constants import WANDB_ENTITY, WANDB_PROJECT
 from lightning.pytorch.loggers import WandbLogger
 
 def build_config() -> fdl.Config[ExperimentConfig]:
-  max_epochs = 100
+  max_epochs = 5
   embed_ch_dim = 32
   num_classes = 9
 

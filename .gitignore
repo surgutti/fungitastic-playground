@@ -1,5 +1,8 @@
 data/
 models/checkpoints/
+wandb/
 .venv
 uv.lock
 logs/
+**/__pycache__
+**/*.pyc
