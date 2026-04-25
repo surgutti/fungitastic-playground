@@ -3,7 +3,14 @@ from typing import Callable
 
 import lightning as L
 import torch
-from torchvision.transforms import Transform
+import pandas as pd
+# from torchvision.transforms import Transform
+# import torchvision.transforms as transforms
+from torchvision.transforms import v2
+from PIL import Image
+import numpy as np
+import re
+import torchvision.transforms.v2.functional as F
 
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -16,12 +23,67 @@ class FungiTasticDataset(Dataset):
       image_transform: Callable [[torch.Tensor], torch.Tensor] | None = None
   ):
     super().__init__()
-    # TODO
-    pass
+    self.image_dir = Path(image_dir)
+    self.masks_file = Path(masks_file)
+
+    self.path_map = {}
+    for p in self.image_dir.glob("*.JPG"):
+        numbers = re.findall(r'\d+', p.stem)
+        if numbers:
+            longest_id = max(numbers, key=len)
+            self.path_map[longest_id] = p
+        
+    self.transform = transform
+    self.image_transform = image_transform
+    self.df = pd.read_parquet(masks_file, columns=['label', 'file_name', 'width', 'height', 'rle'])
+    self.label_map = {'cap': 1, 'fruiting_body': 2, 'gills': 3, 'pores': 4, 'ring': 5, 'stem':6, 'unknown underside': 7}
+  def __len__(self):
+    return len(self.df)
+  
+
+  def rle_to_mask(self, width, height, rle, mask_label):
+    mask_flat = np.zeros(width * height, dtype=np.uint8)
+    current_pos = 0
+    for i, length in enumerate(rle):
+        if i % 2 == 1:
+            mask_flat[current_pos : current_pos + length] = self.label_map[mask_label]
+        current_pos += length
+            
+    mask_2d = mask_flat.reshape((height, width), order='F')
+    return Image.fromarray(mask_2d)
 
   def __getitem__(self, idx: int):
-    # TODO
-    pass
+    metadata = self.df.iloc[idx]
+
+    original_name = metadata['file_name']
+    print("Original name: ", original_name)
+
+    numbers = re.findall(r'\d+', original_name)
+    if not numbers:
+        raise ValueError(f"No digits found in filename: {original_name}")
+        
+    obs_id = max(numbers, key=len)
+    
+    img_path = self.path_map.get(obs_id)
+    
+    if img_path is None:
+        raise FileNotFoundError(f"ID {obs_id} not found in path_map. Check prefixes/suffixes.")
+
+    image = Image.open(img_path).convert("RGB")
+    mask = self.rle_to_mask(metadata['width'], metadata['height'], metadata['rle'], metadata['label'])
+
+    if self.transform is not None:
+      image, mask = self.transform(image, mask)
+    if self.image_transform is not None:
+      image = self.image_transform(image)
+
+    if not isinstance(image, torch.Tensor):
+      image = F.to_dtype(F.to_image(image), torch.float32, scale=True)
+  
+    if not isinstance(mask, torch.Tensor):
+      mask = torch.as_tensor(np.array(mask), dtype=torch.long)
+
+    return image, mask
 
 class FungiTasticDataModule(L.LightningDataModule):
 
@@ -29,7 +91,7 @@ class FungiTasticDataModule(L.LightningDataModule):
   Args:
     data_dir:         Place where the download.py script put data
     batch_size:       Size of a batch
-    transform:        Transforms applied to both images and masks (resizing, crop, ...)
+    transform:        Transforms (v2) applied to both images and masks (resizing, crop, ...)
     image_transforms: Transforms applied only to images (distortion, normalization)
   """
 
