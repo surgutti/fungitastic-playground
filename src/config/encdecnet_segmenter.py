@@ -26,7 +26,7 @@ def build_config() -> fdl.Config[ExperimentConfig]:
   data_module = fdl.Config(
     FungiTasticDataModule,
     "data/FungiTastic",
-    batch_size=32
+    batch_size=64
   )
 
   wandb_logger = fdl.Partial(

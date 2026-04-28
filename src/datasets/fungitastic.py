@@ -2,16 +2,19 @@ from pathlib import Path
 from typing import Callable
 
 import lightning as L
-import torch
-
-from torch.utils.data import DataLoader, Dataset, random_split
-
-import cv2
 import numpy as np
-import pandas as pd
-from torchvision.io import read_image, ImageReadMode
+import torch
+from torch.utils.data import DataLoader, Dataset
+from torchvision.io import ImageReadMode, read_image
+
 
 class FungiTasticDataset(Dataset):
+  """Dataset backed by compact per-split NPZ mask files.
+
+  The image files still come from the regular 300p FungiTastic Mini download.
+  The masks are precomputed semantic masks produced by
+  scripts/compact_segmentation_dataset.py.
+  """
 
   LABEL_TO_ID = {
     "cap": 1,
@@ -24,150 +27,74 @@ class FungiTasticDataset(Dataset):
     "unknown underside": 8
   }
 
-  IGNORE_LABELS = {
-    "fruiting_body",
-    "microscopic"
-  }
+  DEFAULT_COMPACT_DIR = "FungiTastic-Mini-Segmentation-300p-NPZ"
 
-  def __init__(self, data_root: Path, split: str, transform=None):
+  def __init__(
+      self,
+      data_root: str | Path,
+      split: str,
+      transform: Callable | None = None,
+      compact_root: str | Path | None = None,
+  ):
     self.data_root = Path(data_root)
     self.split = split
     self.transform = transform
 
-    image_root = self.data_root / "FungiTastic-Mini" / split / "300p"
+    if compact_root is None:
+      compact_root = self.data_root / self.DEFAULT_COMPACT_DIR
+    self.compact_root = Path(compact_root)
 
-    mask_name = {
-      "train": "Train",
-      "val" : "Validation",
-      "test": "Test"
-    }[split]
+    split_path = self.compact_root / f"{split}.npz"
+    if not split_path.is_file():
+      raise FileNotFoundError(
+        f"Compact split file not found: {split_path}. "
+        "Run `uv run python scripts/compact_segmentation_dataset.py` first."
+      )
 
-    meta_name = {
-      "train": "Train",
-      "val": "Val",
-      "test": "Test"
-    }[split]
+    with np.load(split_path, allow_pickle=False) as data:
+      self.filenames = data["filenames"].astype(str).tolist()
+      image_rel_paths = data["image_rel_paths"].astype(str).tolist()
+      self.image_paths = [
+        str(self.data_root / image_rel_path)
+        for image_rel_path in image_rel_paths
+      ]
+      self.image_widths = data["image_widths"].astype(np.int32)
+      self.image_heights = data["image_heights"].astype(np.int32)
+      self.label_names = data["label_names"].astype(str).tolist()
+      self.target_size = int(data["target_size"])
 
-    meta_path = (
-      self.data_root
-      / "metadata"
-      / "FungiTastic-Mini"
-      / f"FungiTastic-Mini-{meta_name}.csv"
-    )
+      # NPZ is compressed, so this necessarily decompresses the mask array.
+      # Keeping it in RAM makes training reads cheap and avoids per-sample
+      # decompression. For train this is about 1.16 GiB at 300x300.
+      self.masks = np.asarray(data["masks"], dtype=np.uint8)
 
-    mask_path = self.data_root / f"FungiTastic-Mini-{mask_name}Masks.parquet"
-
-    meta = pd.read_csv(meta_path, usecols=["filename"])
-    masks = pd.read_parquet(
-      mask_path,
-      columns=["file_name", "label", "width", "height", "rle"]
-    ).rename(columns={"file_name": "filename"})
-
-    valid_filenames = set(meta["filename"])
-    masks = masks[masks["filename"].isin(valid_filenames)].copy()
-    
-    masks = masks[~masks["label"].isin(self.IGNORE_LABELS)].copy()
-    masks["label_id"] = masks["label"].map(self.LABEL_TO_ID)
-
-    unknown_labels = masks.loc[masks["label_id"].isna(), "label"].unique()
-    # print(f'{unknown_labels=}')
-    assert len(unknown_labels) == 0
-
-    masks["label_id"] = masks["label_id"].astype(np.uint8)
-
-    masks = masks.sort_values("filename", kind="stable").reset_index(drop=True)
-
-    filenames = masks["filename"].to_numpy()
-
-    starts = np.flatnonzero(
-      np.r_[True, filenames[1:] != filenames[:-1]]
-    )
-
-    self.part_offsets = np.r_[starts, len(masks)].astype(np.int64)
-
-    self.filenames = filenames[starts].tolist()
-    self.image_paths = [
-      str(image_root / filename)
-      for filename in self.filenames
-    ]
-
-    self.part_rles = masks["rle"].to_numpy(dtype=object)
-    self.part_label_ids = masks["label_id"].to_numpy(np.uint8)
-    self.part_widths = masks["width"].to_numpy(np.int32)
-    self.part_heights = masks["height"].to_numpy(np.int32)
-
-    del meta
-    del masks
+    if len(self.image_paths) != len(self.masks):
+      raise ValueError(
+        f"Image/mask count mismatch for {split}: "
+        f"{len(self.image_paths)} images vs {len(self.masks)} masks"
+      )
 
   def __len__(self) -> int:
     return len(self.filenames)
 
   def __getitem__(self, idx: int):
     image = read_image(self.image_paths[idx], mode=ImageReadMode.RGB)
-
-    start = self.part_offsets[idx]
-    end = self.part_offsets[idx + 1]
-
-    mask = self._build_semantic_mask(start, end)
-
-    image_h, image_w = image.shape[-2:]
-    mask = cv2.resize(
-      mask,
-      (image_w, image_h),
-      interpolation=cv2.INTER_NEAREST
-    )
-
-    mask = torch.from_numpy(mask).long()
-
-    image, mask = self._pad_crop_300(image, mask)
-
+    image = self._pad_crop_image_300(image, self.target_size)
     image = image.float() / 255.0
+
+    mask = torch.from_numpy(self.masks[idx]).long()
 
     if self.transform is not None:
       image, mask = self.transform(image, mask)
-    
+
     return image, mask
 
-  def _build_semantic_mask(self, start: int, end: int) -> np.ndarray:
-    height = int(self.part_heights[start])
-    width = int(self.part_widths[start])
-
-    semantic = np.zeros((height, width), dtype=np.uint8)
-
-    for part_idx in range(start, end):
-      part_mask = self._rle_to_mask(
-        self.part_rles[part_idx],
-        int(self.part_heights[part_idx]),
-        int(self.part_widths[part_idx])
-      )
-
-      label_id = self.part_label_ids[part_idx]
-      semantic[part_mask.astype(bool)] = label_id
-    
-    return semantic
-
   @staticmethod
-  def _rle_to_mask(rle_points, height: int, width: int) -> np.ndarray:
-    mask = np.zeros(height * width, dtype=np.uint8)
+  def _pad_crop_image_300(image: torch.Tensor, target: int = 300) -> torch.Tensor:
+    _, height, width = image.shape
 
-    position = 0
-    value = 0
-    for count in rle_points[:-4]:
-      if value == 1:
-        mask[position:position + count] = 1
-      
-      position += count
-      value ^= 1
-    
-    return mask.reshape(height, width)
-  
-  @staticmethod
-  def _pad_crop_300(image: torch.Tensor, mask: torch.Tensor):
-    target = 300
-    _, h, w = image.shape
-
-    pad_h = max(0, target - h)
-    pad_w = max(0, target - w)
+    pad_h = max(0, target - height)
+    pad_w = max(0, target - width)
 
     top = pad_h // 2
     bottom = pad_h - top
@@ -180,21 +107,12 @@ class FungiTasticDataset(Dataset):
       value=0
     )
 
-    mask = torch.nn.functional.pad(
-      mask,
-      (left, right, top, bottom),
-      value=0
-    )
+    _, height, width = image.shape
 
-    _, h, w = image.shape
+    top = max(0, (height - target) // 2)
+    left = max(0, (width - target) // 2)
 
-    top = max(0, (h - target) // 2)
-    left = max(0, (w - target) // 2)
-
-    image = image[:, top:top + target, left:left + target]
-    mask = mask[top:top + target, left:left + target]
-
-    return image, mask
+    return image[:, top:top + target, left:left + target]
 
 
 class FungiTasticDataModule(L.LightningDataModule):
@@ -202,58 +120,99 @@ class FungiTasticDataModule(L.LightningDataModule):
   def __init__(
       self,
       data_root: str | Path,
-      batch_size: int = 32,
-      transform: Callable [[torch.Tensor], torch.Tensor] | None = None
+      batch_size: int = 64,
+      transform: Callable | None = None,
+      compact_root: str | Path | None = None,
+      num_workers: int = 8,
+      pin_memory: bool = True,
+      persistent_workers: bool = True
   ):
     super().__init__()
 
     self.data_root = Path(data_root)
+    self.compact_root = Path(compact_root) if compact_root is not None else None
     self.batch_size = batch_size
+    self.transform = transform
+    self.num_workers = num_workers
+    self.pin_memory = pin_memory
+    self.persistent_workers = persistent_workers and num_workers > 0
 
-    self.train_dataset = FungiTasticDataset(
-      data_root,
-      "train",
-      transform=transform,
-    )
-    
-    self.val_dataset = FungiTasticDataset(
-      data_root,
-      "val",
-      transform=transform
-    )
-    
-    self.test_dataset = FungiTasticDataset(
-      data_root,
-      "test",
-      transform=transform
-    )
-    
+    self.train_dataset: FungiTasticDataset | None = None
+    self.val_dataset: FungiTasticDataset | None = None
+    self.test_dataset: FungiTasticDataset | None = None
+
+  def setup(self, stage: str | None = None):
+    if stage in (None, "fit"):
+      if self.train_dataset is None:
+        self.train_dataset = FungiTasticDataset(
+          self.data_root,
+          "train",
+          transform=self.transform,
+          compact_root=self.compact_root,
+        )
+
+      if self.val_dataset is None:
+        self.val_dataset = FungiTasticDataset(
+          self.data_root,
+          "val",
+          transform=self.transform,
+          compact_root=self.compact_root,
+        )
+
+    if stage in (None, "validate"):
+      if self.val_dataset is None:
+        self.val_dataset = FungiTasticDataset(
+          self.data_root,
+          "val",
+          transform=self.transform,
+          compact_root=self.compact_root,
+        )
+
+    if stage in (None, "test"):
+      if self.test_dataset is None:
+        self.test_dataset = FungiTasticDataset(
+          self.data_root,
+          "test",
+          transform=self.transform,
+          compact_root=self.compact_root,
+        )
+
   def train_dataloader(self):
-    return DataLoader(
-      self.train_dataset, 
-      self.batch_size,
+    if self.train_dataset is None:
+      self.setup("fit")
+    assert self.train_dataset is not None
+
+    return self._dataloader(
+      self.train_dataset,
       shuffle=True,
-      num_workers=8,
-      pin_memory=True,
-      persistent_workers=True
     )
 
   def val_dataloader(self):
-    return DataLoader(
-      self.val_dataset, 
-      self.batch_size,
+    if self.val_dataset is None:
+      self.setup("validate")
+    assert self.val_dataset is not None
+
+    return self._dataloader(
+      self.val_dataset,
       shuffle=False,
-      num_workers=8,
-      pin_memory=True,
-      persistent_workers=True
     )
 
   def test_dataloader(self):
-    return DataLoader(
-      self.test_dataset, 
-      self.batch_size,
+    if self.test_dataset is None:
+      self.setup("test")
+    assert self.test_dataset is not None
+
+    return self._dataloader(
+      self.test_dataset,
       shuffle=False,
-      num_workers=8,
-      pin_memory=True,
-      persistent_workers=True
+    )
+
+  def _dataloader(self, dataset: Dataset, shuffle: bool) -> DataLoader:
+    return DataLoader(
+      dataset,
+      batch_size=self.batch_size,
+      shuffle=shuffle,
+      num_workers=self.num_workers,
+      pin_memory=self.pin_memory,
+      persistent_workers=self.persistent_workers,
     )

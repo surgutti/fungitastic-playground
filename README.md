@@ -18,7 +18,12 @@ uv sync
 
 ```bash
 uv run scripts/download.py --subset m --metadata --masks --images --size 300 --save_path ./data
+uv run python scripts/compact_segmentation_dataset.py
 ```
+
+The compaction step creates one compressed segmentation file per split in
+`data/FungiTastic/FungiTastic-Mini-Segmentation-300p-NPZ/`. Training loads
+those files instead of the original mask parquet files.
 
 ### Running
 
