@@ -86,7 +86,7 @@ class FungiTasticDataModule(L.LightningDataModule):
       batch_size: int = 64,
       transform: Callable | None = None,
       segmentation_root: str | Path | None = None,
-      num_workers: int = 8,
+      num_workers: int = 4,
       pin_memory: bool = True,
       persistent_workers: bool = True
   ):
