@@ -14,7 +14,7 @@ from lightning.pytorch.loggers import WandbLogger
 def build_config() -> fdl.Config[ExperimentConfig]:
   max_epochs = 5
   embed_ch_dim = 32
-  num_classes = 9
+  num_classes = 8
 
   architecture = fdl.Config(
     EncDecNetBackbone,

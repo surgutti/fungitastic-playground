@@ -22,7 +22,7 @@ uv run scripts/prepare_dataset.py
 ```
 
 The compaction step creates one compressed segmentation file per split in
-`data/FungiTastic/FungiTastic-Mini-Segmentation-300p-NPZ/`. Training loads
+`data/FungiTastic/SegmentationDataset/`. Training loads
 those files instead of the original mask parquet files.
 
 ### Running

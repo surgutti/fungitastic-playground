@@ -9,12 +9,6 @@ from torchvision.io import ImageReadMode, read_image
 
 
 class FungiTasticDataset(Dataset):
-  """Dataset backed by compact per-split NPZ mask files.
-
-  The image files still come from the regular 300p FungiTastic Mini download.
-  The masks are precomputed semantic masks produced by
-  scripts/compact_segmentation_dataset.py.
-  """
 
   LABEL_TO_ID = {
     "background": 0,
@@ -25,6 +19,10 @@ class FungiTasticDataset(Dataset):
     "ring": 5,
     "ridges": 6,
     "teeth": 7,
+  }
+
+  ID_TO_LABEL = {
+    v: k for k, v in LABEL_TO_ID.items()
   }
 
   DEFAULT_SEGMENTATION_DIR = "SegmentationDataset"
@@ -56,11 +54,11 @@ class FungiTasticDataset(Dataset):
       self.masks = np.asarray(data["masks"], dtype=np.uint8)
 
     self.image_paths = [
-      self.segmentation_root / split / Path(filename).with_suffix(".png").name
+      self.segmentation_root / split / filename
       for filename in self.filenames
     ]
 
-    if len(self.imaeg_paths) != len(self.masks):
+    if len(self.image_paths) != len(self.masks):
       raise ValueError(
         f"Image/mask count mismatch for {split}: "
         f"{len(self.image_paths)} image vs {len(self.masks)} masks"
@@ -121,7 +119,7 @@ class FungiTasticDataModule(L.LightningDataModule):
           self.data_root,
           "val",
           transform=self.transform,
-          compact_root=self.compact_root,
+          segmentation_root=self.segmentation_root,
         )
 
     if stage in (None, "validate"):
