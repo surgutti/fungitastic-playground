@@ -18,7 +18,7 @@ uv sync
 
 ```bash
 uv run scripts/download.py --subset m --metadata --masks --images --size 300 --save_path ./data
-uv run python scripts/compact_segmentation_dataset.py
+uv run scripts/prepare_dataset.py
 ```
 
 The compaction step creates one compressed segmentation file per split in
