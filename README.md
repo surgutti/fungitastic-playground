@@ -17,6 +17,7 @@ uv sync
 ### Dataset download
 
 ```bash
+mkdir data
 uv run scripts/download.py --subset m --metadata --masks --images --size 300 --save_path ./data
 uv run scripts/prepare_dataset.py
 ```
@@ -28,5 +29,5 @@ those files instead of the original mask parquet files.
 ### Running
 
 ```bash
-uv run python -m scripts.train_model src/config/encdecnet_segmenter.py --seed 42
+uv run python -m scripts.train_model src/config/encdecnet_segmenter.py
 ```

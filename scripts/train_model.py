@@ -12,6 +12,7 @@ from fiddle.printing import as_dict_flattened
 import wandb
 from src.config.constants import WANDB_ENTITY, WANDB_PROJECT
 from src.utils.config import get_wandb_config, parse_fiddle_config
+from src.utils.wandb import WandbEpochAxisCallback
 
 if TYPE_CHECKING:
     from lightning.pytorch.loggers import Logger
@@ -64,6 +65,8 @@ def main(config_path, resume_run_name, no_wandb, seed):
             tags=[f"seed: {seed}"],
         )
         logger.append(wandb_logger)
+        callbacks.append(WandbEpochAxisCallback())
+        wandb_logger.experiment.config.update({"seed": seed}, allow_val_change=True)
 
         if config_path is not None and resume_run_name is None:
             wandb_logger.experiment.config.update(

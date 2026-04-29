@@ -32,11 +32,13 @@ class FungiTasticDataset(Dataset):
       data_root: str | Path,
       split: str,
       transform: Callable | None = None,
+      image_transform: Callable | None = None,
       segmentation_root: str | Path | None = None,
   ):
     self.data_root = Path(data_root)
     self.split = split
     self.transform = transform
+    self.image_transform = image_transform
 
     if segmentation_root is None:
       segmentation_root = self.data_root / self.DEFAULT_SEGMENTATION_DIR
@@ -73,6 +75,9 @@ class FungiTasticDataset(Dataset):
 
     mask = torch.from_numpy(self.masks[idx]).long()
 
+    if self.image_transform is not None:
+      image = self.image_transform(image)
+
     if self.transform is not None:
       image, mask = self.transform(image, mask)
 
@@ -85,6 +90,7 @@ class FungiTasticDataModule(L.LightningDataModule):
       data_root: str | Path,
       batch_size: int = 64,
       transform: Callable | None = None,
+      image_transform: Callable | None = None,
       segmentation_root: str | Path | None = None,
       num_workers: int = 4,
       pin_memory: bool = True,
@@ -95,6 +101,7 @@ class FungiTasticDataModule(L.LightningDataModule):
     self.data_root = Path(data_root)
     self.segmentation_root = Path(segmentation_root) if segmentation_root is not None else None
     self.batch_size = batch_size
+    self.image_transform = image_transform
     self.transform = transform
     self.num_workers = num_workers
     self.pin_memory = pin_memory
@@ -110,6 +117,7 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.train_dataset = FungiTasticDataset(
           self.data_root,
           "train",
+          image_transform=self.image_transform,
           transform=self.transform,
           segmentation_root=self.segmentation_root,
         )
@@ -118,6 +126,7 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.val_dataset = FungiTasticDataset(
           self.data_root,
           "val",
+          image_transform=self.image_transform,
           transform=self.transform,
           segmentation_root=self.segmentation_root,
         )
@@ -127,6 +136,7 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.val_dataset = FungiTasticDataset(
           self.data_root,
           "val",
+          image_transform=self.image_transform,
           transform=self.transform,
           segmentation_root=self.segmentation_root,
         )
@@ -136,6 +146,7 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.test_dataset = FungiTasticDataset(
           self.data_root,
           "test",
+          image_transform=self.image_transform,
           transform=self.transform,
           segmentation_root=self.segmentation_root,
         )
