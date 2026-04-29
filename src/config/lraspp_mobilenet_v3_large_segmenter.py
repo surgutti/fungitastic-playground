@@ -22,7 +22,7 @@ def build_config() -> fdl.Config[ExperimentConfig]:
   data_module = fdl.Config(
     FungiTasticDataModule,
     "data/FungiTastic",
-    batch_size=64,
+    batch_size=16,
     num_workers=2
   )
 
@@ -45,7 +45,7 @@ def build_config() -> fdl.Config[ExperimentConfig]:
     architecture,
     embed_ch_dim=embed_ch_dim,
     num_classes=num_classes,
-    lr=1e-4,
+    lr=3e-4,
     weight_decay=1e-4
   )
 
