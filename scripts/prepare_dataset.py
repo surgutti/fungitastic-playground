@@ -17,7 +17,11 @@ OUTPUT_ROOT = DATA_ROOT / "SegmentationDataset"
 IGNORE_LABELS = {
   "fruiting_body",
   "microscopic",
-  "unknown underside"
+  "unknown underside",
+  
+  # these two only are occuring less than a 0.001% in the dataset.
+  "ridges",
+  "teeth",
 }
 
 LABEL_TO_ID = {
@@ -27,8 +31,6 @@ LABEL_TO_ID = {
   "gills": 3,
   "pores": 4,
   "ring": 5,
-  "ridges": 6,
-  "teeth": 7,
 }
 
 def rle_to_mask(rle_points, height, width):

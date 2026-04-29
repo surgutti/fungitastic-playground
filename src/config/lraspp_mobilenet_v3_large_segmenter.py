@@ -10,10 +10,12 @@ from src.config.constants import WANDB_ENTITY, WANDB_PROJECT
 
 from lightning.pytorch.loggers import WandbLogger
 
+from torchvision.transforms import v2
+
 def build_config() -> fdl.Config[ExperimentConfig]:
   max_epochs = 20
   embed_ch_dim = 21
-  num_classes = 8
+  num_classes = 6
 
   architecture = fdl.Config(
     MobileNetV3
@@ -23,7 +25,8 @@ def build_config() -> fdl.Config[ExperimentConfig]:
     FungiTasticDataModule,
     "data/FungiTastic",
     batch_size=16,
-    num_workers=2
+    num_workers=2,
+    image_transform=v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
   )
 
   wandb_logger = fdl.Partial(

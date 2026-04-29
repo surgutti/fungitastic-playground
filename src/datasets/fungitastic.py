@@ -17,8 +17,6 @@ class FungiTasticDataset(Dataset):
     "gills": 3,
     "pores": 4,
     "ring": 5,
-    "ridges": 6,
-    "teeth": 7,
   }
 
   ID_TO_LABEL = {
