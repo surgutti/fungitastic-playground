@@ -5,7 +5,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from src.config.schemas import ExperimentConfig, TrainingConfig
 from src.models.segmentation_model import SegmentationModel
 from src.datasets.fungitastic import FungiTasticDataModule
-from src.models.architectures.lraspp_mobilenet_v3_large import MobileNetV3
+from src.models.architectures.deeplabv3_resnet101 import ResNet101
 from src.config.constants import WANDB_ENTITY, WANDB_PROJECT
 
 from lightning.pytorch.loggers import WandbLogger
@@ -18,7 +18,7 @@ def build_config() -> fdl.Config[ExperimentConfig]:
   num_classes = 6
 
   architecture = fdl.Config(
-    MobileNetV3
+    ResNet101
   )
 
   data_module = fdl.Config(
@@ -62,7 +62,7 @@ def build_config() -> fdl.Config[ExperimentConfig]:
 
   return fdl.Config(
     ExperimentConfig,
-    "lraspp_mobilenet_v3_large_segmenter",
+    "deeplabv3_resnet101_segmenter",
     model,
     data_module,
     training_cfg
