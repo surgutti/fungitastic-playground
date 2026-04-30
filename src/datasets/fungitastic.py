@@ -5,6 +5,7 @@ import lightning as L
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
+from torchvision import tv_tensors
 from torchvision.io import ImageReadMode, read_image
 
 
@@ -77,7 +78,11 @@ class FungiTasticDataset(Dataset):
       image = self.image_transform(image)
 
     if self.transform is not None:
+      image = tv_tensors.Image(image)
+      mask = tv_tensors.Mask(mask)
       image, mask = self.transform(image, mask)
+      image = image.as_subclass(torch.Tensor)
+      mask = mask.as_subclass(torch.Tensor).long()
 
     return image, mask
 
@@ -89,6 +94,10 @@ class FungiTasticDataModule(L.LightningDataModule):
       batch_size: int = 64,
       transform: Callable | None = None,
       image_transform: Callable | None = None,
+      train_transform: Callable | None = None,
+      eval_transform: Callable | None = None,
+      train_image_transform: Callable | None = None,
+      eval_image_transform: Callable | None = None,
       segmentation_root: str | Path | None = None,
       num_workers: int = 4,
       pin_memory: bool = True,
@@ -99,8 +108,26 @@ class FungiTasticDataModule(L.LightningDataModule):
     self.data_root = Path(data_root)
     self.segmentation_root = Path(segmentation_root) if segmentation_root is not None else None
     self.batch_size = batch_size
-    self.image_transform = image_transform
-    self.transform = transform
+    self.train_image_transform = (
+      train_image_transform
+      if train_image_transform is not None
+      else image_transform
+    )
+    self.eval_image_transform = (
+      eval_image_transform
+      if eval_image_transform is not None
+      else image_transform
+    )
+    self.train_transform = (
+      train_transform
+      if train_transform is not None
+      else transform
+    )
+    self.eval_transform = (
+      eval_transform
+      if eval_transform is not None
+      else transform
+    )
     self.num_workers = num_workers
     self.pin_memory = pin_memory
     self.persistent_workers = persistent_workers and num_workers > 0
@@ -115,8 +142,8 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.train_dataset = FungiTasticDataset(
           self.data_root,
           "train",
-          image_transform=self.image_transform,
-          transform=self.transform,
+          image_transform=self.train_image_transform,
+          transform=self.train_transform,
           segmentation_root=self.segmentation_root,
         )
 
@@ -124,8 +151,8 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.val_dataset = FungiTasticDataset(
           self.data_root,
           "val",
-          image_transform=self.image_transform,
-          transform=self.transform,
+          image_transform=self.eval_image_transform,
+          transform=self.eval_transform,
           segmentation_root=self.segmentation_root,
         )
 
@@ -134,8 +161,8 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.val_dataset = FungiTasticDataset(
           self.data_root,
           "val",
-          image_transform=self.image_transform,
-          transform=self.transform,
+          image_transform=self.eval_image_transform,
+          transform=self.eval_transform,
           segmentation_root=self.segmentation_root,
         )
 
@@ -144,8 +171,8 @@ class FungiTasticDataModule(L.LightningDataModule):
         self.test_dataset = FungiTasticDataset(
           self.data_root,
           "test",
-          image_transform=self.image_transform,
-          transform=self.transform,
+          image_transform=self.eval_image_transform,
+          transform=self.eval_transform,
           segmentation_root=self.segmentation_root,
         )
 

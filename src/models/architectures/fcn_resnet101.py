@@ -9,7 +9,7 @@ class ResNet101(nn.Module):
       self
   ):
     super().__init__()
-    self.net = fcn_resnet101(weights=fcn_resnet101.DEFAULT)
+    self.net = fcn_resnet101(weights=FCN_ResNet101_Weights.DEFAULT)
   
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     return self.net(x)['out']
