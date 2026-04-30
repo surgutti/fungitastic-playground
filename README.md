@@ -31,3 +31,7 @@ those files instead of the original mask parquet files.
 ```bash
 uv run python -m scripts.train_model src/config/encdecnet_segmenter.py
 ```
+
+### Results
+
+![results](./reports/results.png)
