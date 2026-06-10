@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Three-column comparison for report figures:
 #
-# from scratch : custom EncDecNet trained from scratch
+# from scratch : custom EncDecNet trained from scratch on the old 8-class setup
 # baseline     : ready-made torchvision DeepLabV3 MobileNetV3 segmentation model
 # hybrid       : pretrained Wide-ResNet50-2 encoder + custom U-Net/ASPP decoder/losses
 #
@@ -49,7 +49,7 @@ echo "baseline checkpoint:     ${BASELINE_CKPT}"
 echo "hybrid checkpoint:       ${HYBRID_CKPT}"
 
 uv run python -m scripts.compare_checkpoint_predictions \
-  --model "from scratch=src/config/encdecnet_segmenter.py:${FROM_SCRATCH_CKPT}" \
+  --model "from scratch=src/config/legacy_encdecnet_8class_segmenter.py:${FROM_SCRATCH_CKPT}" \
   --model "baseline=src/config/deeplabv3_mobilenet_v3_large_segmenter.py:${BASELINE_CKPT}" \
   --model "hybrid=src/config/wide_resnet50_2_unet_512.py:${HYBRID_CKPT}" \
   --split val \
