@@ -32,6 +32,40 @@ def _maybe_compile_backbone(model: L.LightningModule, mode: str) -> None:
         warnings.warn(f"torch.compile failed; continuing without compilation. Error: {exc}")
 
 
+def _parse_overfit_batches(value: str) -> int | float:
+    """Parse Lightning's overfit_batches without losing int-vs-float semantics.
+
+    Lightning interprets an integer as an exact number of batches, e.g. `8`,
+    but a float as a fraction of the dataset, e.g. `0.02`. Click previously
+    converted `8` to `8.0`, which destroyed that distinction.
+    """
+    value = value.strip()
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise click.BadParameter("expected an integer batch count or a fraction") from exc
+
+    if parsed < 0:
+        raise click.BadParameter("must be non-negative")
+
+    if parsed == 0:
+        return 0.0
+
+    lower = value.lower()
+    has_float_syntax = any(ch in lower for ch in (".", "e"))
+
+    if not has_float_syntax:
+        return int(parsed)
+
+    if parsed > 1.0 and parsed.is_integer():
+        return int(parsed)
+
+    if parsed > 1.0:
+        raise click.BadParameter("float fractions must be <= 1.0; use e.g. 8 for exact batches")
+
+    return parsed
+
+
 @click.command()
 @click.argument("config_path", type=click.Path(exists=True, dir_okay=False, file_okay=True), required=False)
 @click.option("--resume_run_name", type=str, default=None)
@@ -45,7 +79,7 @@ def _maybe_compile_backbone(model: L.LightningModule, mode: str) -> None:
 @click.option("--gradient_clip_val", type=float, default=1.0, show_default=True)
 @click.option("--num_workers_hint", type=int, default=None, help="Override datamodule.num_workers if present.")
 @click.option("--fast_dev_run", type=int, default=0, help="Run N train/val batches for a smoke test.")
-@click.option("--overfit_batches", type=float, default=0.0, help="Use e.g. 8 or 0.02 to debug overfitting.")
+@click.option("--overfit_batches", type=str, default="0", show_default=True, help="Use e.g. 8 for exact batches or 0.02 for a fraction.")
 @click.option("--limit_train_batches", type=float, default=1.0)
 @click.option("--limit_val_batches", type=float, default=1.0)
 @click.option("--compile_backbone", is_flag=True, default=False)
@@ -82,6 +116,7 @@ def main(
 
     torch.set_float32_matmul_precision(matmul_precision)
     L.seed_everything(seed, workers=True)
+    parsed_overfit_batches = _parse_overfit_batches(overfit_batches)
 
     if resume_run_name is not None:
         cfg: fdl.Config[ExperimentConfig] = get_wandb_config(f"{WANDB_ENTITY}/{WANDB_PROJECT}/{resume_run_name}")
@@ -161,7 +196,7 @@ def main(
         gradient_clip_val=gradient_clip_val,
         gradient_clip_algorithm="norm",
         fast_dev_run=fast_dev_run if fast_dev_run > 0 else False,
-        overfit_batches=overfit_batches,
+        overfit_batches=parsed_overfit_batches,
         limit_train_batches=limit_train_batches,
         limit_val_batches=limit_val_batches,
         num_sanity_val_steps=2,
