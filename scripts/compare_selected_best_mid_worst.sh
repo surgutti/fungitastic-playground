@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Selected from the W&B CSV export around 2026-06-10:
-# best   : advanced_wide_resnet50_2_unet_512_20260610_140127, val/mean_iou.max ~= 0.6975
-# middle : weighted_augmented_deeplabv3_mobilenet_v3_large_segmenter_20260430_132604, val/mean_iou.max ~= 0.6419
-# weak   : encdecnet_segmenter_20260430_011129, val/mean_iou.max ~= 0.1326
+# Three-column comparison for report figures:
+#
+# from scratch : custom EncDecNet trained from scratch
+# baseline     : ready-made torchvision DeepLabV3 MobileNetV3 segmentation model
+# hybrid       : pretrained Wide-ResNet50-2 encoder + custom U-Net/ASPP decoder/losses
 #
 # The script finds a checkpoint in each logs/<run>/ directory and calls
 # scripts.compare_checkpoint_predictions on the same validation filenames.
@@ -35,24 +36,24 @@ find_ckpt() {
   return 1
 }
 
-BEST_RUN="advanced_wide_resnet50_2_unet_512_20260610_140127"
-MID_RUN="weighted_augmented_deeplabv3_mobilenet_v3_large_segmenter_20260430_132604"
-WEAK_RUN="encdecnet_segmenter_20260430_011129"
+FROM_SCRATCH_RUN="encdecnet_segmenter_20260430_011129"
+BASELINE_RUN="weighted_augmented_deeplabv3_mobilenet_v3_large_segmenter_20260430_132604"
+HYBRID_RUN="advanced_wide_resnet50_2_unet_512_20260610_140127"
 
-BEST_CKPT="$(find_ckpt "logs/${BEST_RUN}")"
-MID_CKPT="$(find_ckpt "logs/${MID_RUN}")"
-WEAK_CKPT="$(find_ckpt "logs/${WEAK_RUN}")"
+FROM_SCRATCH_CKPT="$(find_ckpt "logs/${FROM_SCRATCH_RUN}")"
+BASELINE_CKPT="$(find_ckpt "logs/${BASELINE_RUN}")"
+HYBRID_CKPT="$(find_ckpt "logs/${HYBRID_RUN}")"
 
-echo "Best checkpoint:   ${BEST_CKPT}"
-echo "Middle checkpoint: ${MID_CKPT}"
-echo "Weak checkpoint:   ${WEAK_CKPT}"
+echo "from scratch checkpoint: ${FROM_SCRATCH_CKPT}"
+echo "baseline checkpoint:     ${BASELINE_CKPT}"
+echo "hybrid checkpoint:       ${HYBRID_CKPT}"
 
 uv run python -m scripts.compare_checkpoint_predictions \
-  --model "best_wide_resnet=src/config/wide_resnet50_2_unet_512.py:${BEST_CKPT}" \
-  --model "middle_deeplab_mobilenet=src/config/deeplabv3_mobilenet_v3_large_segmenter.py:${MID_CKPT}" \
-  --model "weak_encdecnet=src/config/encdecnet_segmenter.py:${WEAK_CKPT}" \
+  --model "from scratch=src/config/encdecnet_segmenter.py:${FROM_SCRATCH_CKPT}" \
+  --model "baseline=src/config/deeplabv3_mobilenet_v3_large_segmenter.py:${BASELINE_CKPT}" \
+  --model "hybrid=src/config/wide_resnet50_2_unet_512.py:${HYBRID_CKPT}" \
   --split val \
   --prefer_class 4 \
   --prefer_class 5 \
   --num_samples 12 \
-  --output_dir reports/prediction_comparison_best_mid_worst
+  --output_dir reports/prediction_comparison_from_scratch_baseline_hybrid
